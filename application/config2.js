@@ -15,15 +15,17 @@ const config = {
 	// 	refreshIntervalSeconds: process.env.IMAP_REFRESH_INTERVAL_SECONDS
 	// },
 	imap: {
-		user: "cfnteknoloji@gmail.com",
-		password: "CfnGoogle44!",
-		host: "imap.gmail.com",
+		user: "arabulucu",
+		password: "4R4buLuCu.2022.!",
+		host: "mail.cfn.com.tr",
 		port: 993,
-		tls: true,
-		tlsOptions: {
+		auth: {
+			user: "arabulucu",
+			pass: "4R4buLuCu.2022.!",
+		},
+		tls: {
 			rejectUnauthorized: false,
 		},
-		authTimeout: 3000,
 	},
 	http: { port: normalizePort(process.env.PORT || '5000') }
 }

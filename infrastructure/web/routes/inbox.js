@@ -1,10 +1,10 @@
 const express = require('express')
 
 const router = new express.Router()
-const {sanitizeParam} = require('express-validator/filter')
+const { sanitizeParam } = require('express-validator/filter')
 
 const sanitizeAddress = sanitizeParam('address').customSanitizer(
-	(value, {req}) => {
+	(value, { req }) => {
 		return req.params.address
 			.replace(/[^A-Za-z0-9_.+@-]/g, '') // Remove special characters
 			.toLowerCase()
@@ -12,11 +12,14 @@ const sanitizeAddress = sanitizeParam('address').customSanitizer(
 )
 
 router.get('^/:address([^@/]+@[^@/]+)', sanitizeAddress, (req, res, _next) => {
-	const mailProcessingService = req.app.get('mailProcessingService')
+	const ConnectionsArray = req.app.get('ConnectionsArray')
+	const mailProcessingService = ConnectionsArray["cfnteknoloji@gmail.com"].mailProcessingService
+	// console.log("🚀 ~ file: inbox.js ~ line 16 ~ router.get ~ ConnectionsArray", mailProcessingService);
+	console.log("🚀 ~ file: inbox.js ~ line 22 ~ router.get ~ mailProcessingService.getMailSummaries(req.params.address)", mailProcessingService.getMailSummaries("cfnteknoloji@gmail.com"));
 	res.render('inbox', {
 		title: req.params.address,
 		address: req.params.address,
-		mailSummaries: mailProcessingService.getMailSummaries(req.params.address)
+		mailSummaries: mailProcessingService.getMailSummaries("cfnteknoloji@gmail.com")
 	})
 })
 
@@ -39,7 +42,7 @@ router.get(
 					mail
 				})
 			} else {
-				next({message: 'email not found', status: 404})
+				next({ message: 'email not found', status: 404 })
 			}
 		} catch (error) {
 			console.error('error while fetching one email', error)
