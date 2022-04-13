@@ -1,13 +1,14 @@
 const EventEmitter = require('events')
 const imaps = require('imap-simple')
-const {simpleParser} = require('mailparser')
+const { simpleParser } = require('mailparser')
 const addressparser = require('nodemailer/lib/addressparser')
 const pSeries = require('p-series')
 const retry = require('async-retry')
 const debug = require('debug')('void-mail:imap')
 const _ = require('lodash')
 const Mail = require('../domain/mail')
-
+const Attachment = require('../domain/attachments')
+const toUpper = (thing) => (thing && thing.toUpperCase ? thing.toUpperCase() : thing);
 
 // Just adding some missing functions to imap-simple... :-)
 
@@ -20,27 +21,27 @@ const Mail = require('../domain/mail')
  * @memberof ImapSimple
  */
 imaps.ImapSimple.prototype.deleteMessage = function (uid, callback) {
-    var self = this;
+	var self = this;
 
-    if (callback) {
-        return nodeify(self.deleteMessage(uid), callback);
-    }
+	if (callback) {
+		return nodeify(self.deleteMessage(uid), callback);
+	}
 
-    return new Promise(function (resolve, reject) {
-        self.imap.addFlags(uid, '\\Deleted', function (err) {
-            if (err) {
-                reject(err);
-                return;
-            }
-            self.imap.expunge( function (err) {
-                if (err) {
-                    reject(err);
-                    return;
-                }
-                resolve();
-            });
-        });
-    });
+	return new Promise(function (resolve, reject) {
+		self.imap.addFlags(uid, '\\Deleted', function (err) {
+			if (err) {
+				reject(err);
+				return;
+			}
+			self.imap.expunge(function (err) {
+				if (err) {
+					reject(err);
+					return;
+				}
+				resolve();
+			});
+		});
+	});
 };
 
 
@@ -53,30 +54,30 @@ imaps.ImapSimple.prototype.deleteMessage = function (uid, callback) {
  * @returns {undefined|Promise} Returns a promise when no callback is specified, resolving to `boxName`
  * @memberof ImapSimple
  */
-imaps.ImapSimple.prototype.closeBox = function (autoExpunge=true, callback) {
-    var self = this;
+imaps.ImapSimple.prototype.closeBox = function (autoExpunge = true, callback) {
+	var self = this;
 
-    if (typeof(autoExpunge) == 'function'){
-        callback = autoExpunge;
-        autoExpunge = true;
-    }
+	if (typeof (autoExpunge) == 'function') {
+		callback = autoExpunge;
+		autoExpunge = true;
+	}
 
-    if (callback) {
-        return nodeify(this.closeBox(autoExpunge), callback);
-    }
+	if (callback) {
+		return nodeify(this.closeBox(autoExpunge), callback);
+	}
 
-    return new Promise(function (resolve, reject) {
+	return new Promise(function (resolve, reject) {
 
-        self.imap.closeBox(autoExpunge, function (err, result) {
+		self.imap.closeBox(autoExpunge, function (err, result) {
 
-            if (err) {
-                reject(err);
-                return;
-            }
+			if (err) {
+				reject(err);
+				return;
+			}
 
-            resolve(result);
-        });
-    });
+			resolve(result);
+		});
+	});
 };
 
 
@@ -238,19 +239,44 @@ class ImapService extends EventEmitter {
 	}
 
 	_createMailSummary(message) {
+
 		const headerPart = message.parts[0].body
-		const to = headerPart.to
-			.flatMap(to => addressparser(to))
+
+		const { uid, seqNo, struct, envelope } = message.attributes
+
+		const to = parseMailAddress(envelope.to)
+		const cc = envelope.cc?.flatMap(cc => addressparser(cc))
+			// The address also contains the name, just keep the email
+			.map(addressObj => addressObj.address)
+		const bcc = envelope.bcc
+			?.flatMap(bcc => addressparser(bcc))
 			// The address also contains the name, just keep the email
 			.map(addressObj => addressObj.address)
 
-		const from = headerPart.from.flatMap(from => addressparser(from))
+		const sender = envelope.sender
+			?.flatMap(sender => addressparser(sender))
+			// The address also contains the name, just keep the email
+			.map(addressObj => addressObj.address)
+
+		const replyTo = envelope.replyTo
+			?.flatMap(replyTo => addressparser(replyTo))
+			// The address also contains the name, just keep the email
+			.map(addressObj => addressObj.address)
+
+		const from = envelope.from?.flatMap(from => addressparser(from))
+
 
 		const subject = headerPart.subject[0]
 		const date = headerPart.date[0]
-		const {uid} = message.attributes
+		const inReplyTo = envelope.inReplyTo
 
-		return Mail.create(to, from, date, subject, uid)
+		const attachments = findAttachmentParts(struct);
+		const type = Array.isArray(struct) ? struct[0].type : null;
+		let caseInfo;
+		let emailId;
+		let mail = Mail.create(to, from, date, subject, uid, sender, cc, bcc, inReplyTo, attachments, seqNo, type, caseInfo, emailId, replyTo);
+		// console.log("🚀 ~ file: imap-service.js ~ line 281 ~ ImapService ~ _createMailSummary ~ a", a);
+		return mail
 	}
 
 	async fetchOneFullMail(to, uid) {
@@ -273,7 +299,7 @@ class ImapService extends EventEmitter {
 			throw new Error('email not found')
 		}
 
-		const fullBody = _.find(messages[0].parts, {which: ''})
+		const fullBody = _.find(messages[0].parts, { which: '' })
 		return simpleParser(fullBody.body)
 	}
 
@@ -302,14 +328,43 @@ class ImapService extends EventEmitter {
 
 	async _getMailHeaders(uids) {
 		const fetchOptions = {
-			bodies: ['HEADER.FIELDS (FROM TO SUBJECT DATE)'],
-			struct: false
+			bodies: ["HEADER"],
+			flags: true,
+			envelope: true,
+			uid: true,
+			struct: true,
 		}
+		// const fetchOptions = {
+		// 	bodies: ['HEADER.FIELDS (FROM TO SUBJECT DATE)'],
+		// 	struct: false
+		// }
 		const searchCriteria = [['UID', ...uids]]
 		return this.connection.search(searchCriteria, fetchOptions)
 	}
 }
 
+findAttachmentParts = (struct, attachments) => {
+	attachments = attachments || [];
+	for (var i = 0, len = struct.length, r; i < len; ++i) {
+		if (Array.isArray(struct[i])) {
+			findAttachmentParts(struct[i], attachments);
+		} else if (struct[i].disposition && ["INLINE", "ATTACHMENT"].indexOf(toUpper(struct[i].disposition.type)) > -1) {
+			// attachments.push(struct[i]);
+			const attachmentDetail = new Attachment(struct[i].partID, struct[i].params.name, struct[i].type, struct[i].subtype, struct[i].encoding, struct[i].size);
+			attachments.push(attachmentDetail);
+		}
+	}
+	return attachments;
+};
+parseMailAddress = (adresArray) => {
+	if (Array.isArray(adresArray)) {
+		adresArray.map((fromObj) => {
+			fromObj.address = `${fromObj.mailbox}@${fromObj.host}`;
+			return fromObj;
+		});
+	}
+	return adresArray;
+};
 // Consumers should use these constants:
 ImapService.EVENT_NEW_MAIL = 'mail'
 ImapService.EVENT_DELETED_MAIL = 'mailDeleted'

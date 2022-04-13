@@ -11,11 +11,11 @@ class MailProcessingService extends EventEmitter {
 		this.clientNotification = clientNotification
 		this.imapService = imapService
 		this.config = config
-
+		this.mailAccount = config.imap.user;
 		// Cached methods:
 		this.cachedFetchFullMail = mem(
 			this.imapService.fetchOneFullMail.bind(this.imapService),
-			{maxAge: 10 * 60 * 1000}
+			{ maxAge: 10 * 60 * 1000 }
 		)
 
 		this.initialLoadDone = false
@@ -41,21 +41,19 @@ class MailProcessingService extends EventEmitter {
 
 	onInitialLoadDone() {
 		this.initialLoadDone = true
-		console.log(
+		console.log(this.mailRepository,
 			`initial load done, got ${this.mailRepository.mailCount()} mails`
 		)
 	}
 
 	onNewMail(mail) {
+		console.log("🚀 ~ file: mail-processing-service.js ~ line 50 ~ MailProcessingService ~ onNewMail ~ mail", this.mailAccount, mail);
 		if (this.initialLoadDone) {
 			// For now, only log messages if they arrive after the initial load
 			debug('new mail for', mail.to[0])
 		}
-
-		mail.to.forEach(to => {
-			this.mailRepository.add(to, mail)
-			return this.clientNotification.emit(to)
-		})
+		this.mailRepository.add(this.mailAccount, mail);
+		return this.clientNotification.emit(this.mailAccount);
 	}
 
 	onMailDeleted(uid) {
