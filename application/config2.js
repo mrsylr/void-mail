@@ -22,9 +22,13 @@ const config = {
 		auth: {
 			user: "arabulucu",
 			pass: "4R4buLuCu.2022.!",
+			secureProtocol: "TLSv1_method"
 		},
 		tls: {
 			rejectUnauthorized: false,
+		},
+		keepalive: {
+			forceNoop: true,
 		},
 	},
 	http: { port: normalizePort(process.env.PORT || '5000') }

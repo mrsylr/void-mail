@@ -19,7 +19,10 @@ class MailRepository {
 	}
 
 	add(to, mailSummary) {
-		this.mailSummaries.set(to.toLowerCase(), mailSummary)
+		this.mailSummaries.set(to.toLowerCase() + "_inbox", mailSummary)
+	}
+	addSentBox(to, mailSummary) {
+		this.mailSummaries.set(to.toLowerCase() + "_sentbox", mailSummary)
 	}
 
 	removeUid(uid) {
@@ -37,6 +40,18 @@ class MailRepository {
 	mailCount() {
 		return this.mailSummaries.size
 	}
+	saveToFile(address) {
+
+		const mails = [...this.mailSummaries.values()]
+
+		const fs = require('fs')
+		fs.writeFile("/tmp/all", JSON.stringify(mails), err => {
+			if (err) {
+				console.error('can not save mails to file', err)
+			}
+		})
+	}
+
 }
 
 module.exports = MailRepository

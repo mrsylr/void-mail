@@ -1,5 +1,5 @@
 class Mail {
-	constructor(to, from, date, subject, uid, sender, cc, bcc, inReplyTo, attachments, seqNo, type, caseInfo, emailId, replyTo) {
+	constructor(to, from, date, subject, uid, sender, cc, bcc, inReplyTo, attachments, seqNo, type, caseInfo, emailId, replyTo, messageId) {
 		this.date = date
 		this.subject = subject
 		this.from = from
@@ -16,10 +16,11 @@ class Mail {
 		this.emailId = emailId
 		this.uid = uid
 		this.replyTo = replyTo
+		this.messageId = messageId
 	}
 
-	static create(to, from, date, subject, uid, sender, cc, bcc, inReplyTo, attachments, seqNo, type, caseInfo, emailId, replyTo) {
-		return new Mail(to, from, date, subject, uid, sender, cc, bcc, inReplyTo, attachments, seqNo, type, caseInfo, emailId, replyTo)
+	static create(to, from, date, subject, uid, sender, cc, bcc, inReplyTo, attachments, seqNo, type, caseInfo, emailId, replyTo, messageId) {
+		return new Mail(to, from, date, subject, uid, sender, cc, bcc, inReplyTo, attachments, seqNo, type, caseInfo, emailId, replyTo, messageId)
 	}
 
 

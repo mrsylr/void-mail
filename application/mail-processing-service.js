@@ -1,6 +1,7 @@
 const EventEmitter = require('events')
 const debug = require('debug')('void-mail:imap-manager')
 const mem = require('mem')
+const util = require('util')
 const moment = require('moment')
 const ImapService = require('./imap-service')
 
@@ -19,6 +20,7 @@ class MailProcessingService extends EventEmitter {
 		)
 
 		this.initialLoadDone = false
+		this.initialLoadSentBoxDone = false
 
 		// Delete old messages now and every few hours
 		this.imapService.once(ImapService.EVENT_INITIAL_LOAD_DONE, () =>
@@ -28,11 +30,12 @@ class MailProcessingService extends EventEmitter {
 	}
 
 	getMailSummaries(address) {
+
 		return this.mailRepository.getForRecipient(address)
 	}
 
-	getOneFullMail(address, uid) {
-		return this.cachedFetchFullMail(address, uid)
+	getOneFullMail(box, address, uid) {
+		return this.cachedFetchFullMail(box, address, uid)
 	}
 
 	getAllMailSummaries() {
@@ -41,18 +44,32 @@ class MailProcessingService extends EventEmitter {
 
 	onInitialLoadDone() {
 		this.initialLoadDone = true
-		console.log(this.mailRepository,
+		console.log(
 			`initial load done, got ${this.mailRepository.mailCount()} mails`
+		)
+		// console.log(util.inspect(this.mailRepository, { showHidden: false, depth: null, colors: true }))
+	}
+	onInitialLoadSentBoxDone() {
+		this.initialLoadSentBoxDone = true
+		console.log(this.mailRepository,
+			`initial load sent box done, got ${this.mailRepository.mailCount()} mails`
 		)
 	}
 
 	onNewMail(mail) {
-		console.log("🚀 ~ file: mail-processing-service.js ~ line 50 ~ MailProcessingService ~ onNewMail ~ mail", this.mailAccount, mail);
 		if (this.initialLoadDone) {
 			// For now, only log messages if they arrive after the initial load
 			debug('new mail for', mail.to[0])
 		}
 		this.mailRepository.add(this.mailAccount, mail);
+		return this.clientNotification.emit(this.mailAccount);
+	}
+	onNewSentMail(mail) {
+		if (this.initialLoadSentBoxDone) {
+			// For now, only log messages if they arrive after the initial load
+			debug('new mail for', mail.to[0])
+		}
+		this.mailRepository.addSentBox(this.mailAccount, mail);
 		return this.clientNotification.emit(this.mailAccount);
 	}
 
@@ -74,13 +91,15 @@ class MailProcessingService extends EventEmitter {
 		}
 	}
 
-	_saveToFile(mails, filename) {
-		const fs = require('fs')
-		fs.writeFile(filename, JSON.stringify(mails), err => {
-			if (err) {
-				console.error('can not save mails to file', err)
-			}
-		})
+	saveToFile(address) {
+		// console.log("🚀 ~ file: mail-processing-service.js ~ line 94 ~ MailProcessingService ~ saveToFile ~ address", address);
+		// const fs = require('fs')
+		// fs.writeFile(filename, JSON.stringify(mails), err => {
+		// 	if (err) {
+		// 		console.error('can not save mails to file', err)
+		// 	}
+		// })
+		this.mailRepository.saveToFile(address);
 	}
 }
 

@@ -22,8 +22,12 @@ const config = {
 		tls: true,
 		tlsOptions: {
 			rejectUnauthorized: false,
+			secureProtocol: "TLSv1_method"
 		},
 		authTimeout: 3000,
+		keepalive: {
+			forceNoop: true,
+		},
 	},
 	http: { port: normalizePort(process.env.PORT || '5000') }
 }

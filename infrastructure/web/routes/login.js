@@ -2,25 +2,25 @@ const express = require('express')
 
 const router = new express.Router()
 const randomWord = require('random-word')
-const {check, validationResult} = require('express-validator/check')
+const { check, validationResult } = require('express-validator/check')
 const config = require('../../../application/config')
 
 router.get('/', (req, res, _next) => {
 	res.render('login', {
 		title: 'Login',
-		username: randomWord(),
+		username: "cfnteknoloji@gmail.com",
 		domain: config.email.domain
 	})
 })
 
 router.get('/random', (req, res, _next) => {
-	res.redirect(`/${randomWord()}@${config.email.domain}`)
+	res.redirect(`/get/inbox/cfnteknoloji@gmail.com`)
 })
 
 router.post(
 	'/',
 	[
-		check('username').isLength({min: 1}),
+		check('username').isLength({ min: 1 }),
 		check('domain').isIn([config.email.domain])
 	],
 	(req, res) => {
@@ -34,7 +34,7 @@ router.post(
 			})
 		}
 
-		res.redirect(`/${req.body.username}@${req.body.domain}`)
+		res.redirect(`/get/inbox/${req.body.username}@${req.body.domain}`)
 	}
 )
 

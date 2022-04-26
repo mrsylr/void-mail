@@ -97,8 +97,10 @@ class ImapService extends EventEmitter {
 		 * @type {Set<any>}
 		 */
 		this.loadedUids = new Set()
+		this.loadedSentBoxUids = new Set()
 
 		this.connection = null
+		this.sentBoxConnection = null
 		this.initialLoadDone = false
 	}
 
@@ -114,15 +116,22 @@ class ImapService extends EventEmitter {
 		)
 
 		await this._connectWithRetry(configWithListener)
+		await this._connectsentBoxWithRetry(configWithListener)
 
 		// Load all messages in the background. (ASYNC)
 		this._loadMailSummariesAndEmitAsEvents()
+		this._loadSentMailSummariesAndEmitAsEvents()
 	}
 
 	async _connectWithRetry(configWithListener) {
+
 		try {
 			await retry(
 				async _bail => {
+					if (this.connection) {
+						console.log("zaten baglanti var");
+					}
+
 					// If anything throws, we retry
 					this.connection = await imaps.connect(configWithListener)
 
@@ -135,8 +144,39 @@ class ImapService extends EventEmitter {
 						this.emit('error', err)
 					})
 
-					await this.connection.openBox('INBOX')
+					const box = await this.connection.openBox('INBOX')
+					console.log("==>" + box.uidvalidity);
 					debug('connected to imap')
+				},
+				{
+					retries: 5
+				}
+			)
+		} catch (error) {
+			console.error('can not connect, even with retry, stop app', error)
+			throw error
+		}
+	}
+	async _connectsentBoxWithRetry(configWithListener) {
+		try {
+			await retry(
+				async _bail => {
+					// If anything throws, we retry
+					this.sentBoxConnection = await imaps.connect(configWithListener)
+
+					this.sentBoxConnection.on('error', err => {
+						// We assume that the app will be restarted after a crash.
+						console.error(
+							'got fatal error during imap operation, stop app.',
+							err
+						)
+						this.emit('error', err)
+					})
+
+					const box = await this.sentBoxConnection.openBox('[Gmail]/Sent Mail')
+					console.log(box.uidvalidity);
+					debug('connected to imap')
+					console.log('connected to imap')
 				},
 				{
 					retries: 5
@@ -149,6 +189,7 @@ class ImapService extends EventEmitter {
 	}
 
 	_doOnNewMail() {
+		console.log("🚀 ~ file: imap-service.js ~ line 187 ~ ImapService ~ _doOnNewMail ~ _doOnNewMail");
 		// Only react to new mails after the initial load, otherwise it might load the same mails twice.
 		if (this.initialLoadDone) {
 			this._loadMailSummariesAndEmitAsEvents()
@@ -175,6 +216,7 @@ class ImapService extends EventEmitter {
 		// UID: Unique id of a message.
 
 		const uids = await this._getAllUids()
+		console.log("🚀 ~ file: imap-service.js ~ line 219 ~ ImapService ~ _loadMailSummariesAndEmitAsEvents ~ uids", uids.length);
 		const newUids = uids.filter(uid => !this.loadedUids.has(uid))
 
 		// Optimize by fetching several messages (but not all) with one 'search' call.
@@ -186,6 +228,30 @@ class ImapService extends EventEmitter {
 		// Creates an array of functions. We do not start the search now, we just create the function.
 		const fetchFunctions = uidChunks.map(uidChunk => () =>
 			this._getMailHeadersAndEmitAsEvents(uidChunk)
+		)
+
+		await pSeries(fetchFunctions)
+
+		if (!this.initialLoadDone) {
+			this.initialLoadDone = true
+			this.emit(ImapService.EVENT_INITIAL_LOAD_DONE)
+		}
+	}
+	async _loadSentMailSummariesAndEmitAsEvents() {
+		// UID: Unique id of a message.
+
+		const uids = await this._getSentBoxAllUids()
+		const newUids = uids.filter(uid => !this.loadedSentBoxUids.has(uid))
+
+		// Optimize by fetching several messages (but not all) with one 'search' call.
+		// fetching all at once might be more efficient, but then it takes long until we see any messages
+		// in the frontend. With a small chunk size we ensure that we see the newest emails after a few seconds after
+		// restart.
+		const uidChunks = _.chunk(newUids, 20)
+
+		// Creates an array of functions. We do not start the search now, we just create the function.
+		const fetchFunctions = uidChunks.map(uidChunk => () =>
+			this._getSentBoxMailHeadersAndEmitAsEvents(uidChunk)
 		)
 
 		await pSeries(fetchFunctions)
@@ -237,49 +303,45 @@ class ImapService extends EventEmitter {
 			})
 		})
 	}
+	async _searchSentBoxWithoutFetch(searchCriteria) {
+		const imapUnderlying = this.sentBoxConnection.imap
+
+		return new Promise((resolve, reject) => {
+			imapUnderlying.search(searchCriteria, (err, uids) => {
+				if (err) {
+					reject(err)
+				} else {
+					resolve(uids || [])
+				}
+			})
+		})
+	}
 
 	_createMailSummary(message) {
 
 		const headerPart = message.parts[0].body
-
 		const { uid, seqNo, struct, envelope } = message.attributes
-
 		const to = parseMailAddress(envelope.to)
-		const cc = envelope.cc?.flatMap(cc => addressparser(cc))
-			// The address also contains the name, just keep the email
-			.map(addressObj => addressObj.address)
-		const bcc = envelope.bcc
-			?.flatMap(bcc => addressparser(bcc))
-			// The address also contains the name, just keep the email
-			.map(addressObj => addressObj.address)
-
-		const sender = envelope.sender
-			?.flatMap(sender => addressparser(sender))
-			// The address also contains the name, just keep the email
-			.map(addressObj => addressObj.address)
-
-		const replyTo = envelope.replyTo
-			?.flatMap(replyTo => addressparser(replyTo))
-			// The address also contains the name, just keep the email
-			.map(addressObj => addressObj.address)
-
-		const from = envelope.from?.flatMap(from => addressparser(from))
-
-
+		const from = parseMailAddress(envelope.from);
+		const senter = parseMailAddress(envelope.senter);
+		const replyTo = parseMailAddress(envelope.replyTo);
+		const bcc = parseMailAddress(envelope.bcc);
+		const cc = parseMailAddress(envelope.cc);
 		const subject = headerPart.subject[0]
 		const date = headerPart.date[0]
 		const inReplyTo = envelope.inReplyTo
+		const messageId = envelope.messageId
 
 		const attachments = findAttachmentParts(struct);
 		const type = Array.isArray(struct) ? struct[0].type : null;
 		let caseInfo;
 		let emailId;
-		let mail = Mail.create(to, from, date, subject, uid, sender, cc, bcc, inReplyTo, attachments, seqNo, type, caseInfo, emailId, replyTo);
-		// console.log("🚀 ~ file: imap-service.js ~ line 281 ~ ImapService ~ _createMailSummary ~ a", a);
+		let mail = Mail.create(to, from, date, subject, uid, senter, cc, bcc, inReplyTo, attachments, seqNo, type, caseInfo, emailId, replyTo, messageId);
 		return mail
 	}
 
-	async fetchOneFullMail(to, uid) {
+	async fetchOneFullMail(box, to, uid) {
+
 		if (!this.connection) {
 			// Here we 'fail fast' instead of waiting for the connection.
 			throw new Error('imap connection not ready')
@@ -294,11 +356,16 @@ class ImapService extends EventEmitter {
 			markSeen: false
 		}
 
-		const messages = await this.connection.search(searchCriteria, fetchOptions)
+		let messages;
+		if (box === "inbox") {
+			messages = await this.connection.search(searchCriteria, fetchOptions)
+		}
+		else {
+			messages = await this.sentBoxConnection.search(searchCriteria, fetchOptions)
+		}
 		if (messages.length === 0) {
 			throw new Error('email not found')
 		}
-
 		const fullBody = _.find(messages[0].parts, { which: '' })
 		return simpleParser(fullBody.body)
 	}
@@ -309,7 +376,13 @@ class ImapService extends EventEmitter {
 		// Create copy to not mutate the original array. Sort with newest first (DESC).
 		return [...uids].sort().reverse()
 	}
-
+	async _getSentBoxAllUids() {
+		// setTimeout(this.throwException, 15000)
+		// We ignore mails that are flagged as DELETED, but have not been removed (expunged) yet.
+		const uids = await this._searchSentBoxWithoutFetch([['!DELETED']])
+		// Create copy to not mutate the original array. Sort with newest first (DESC).
+		return [...uids].sort().reverse()
+	}
 	async _getMailHeadersAndEmitAsEvents(uids) {
 		try {
 			const mails = await this._getMailHeaders(uids)
@@ -325,7 +398,21 @@ class ImapService extends EventEmitter {
 			throw error
 		}
 	}
-
+	async _getSentBoxMailHeadersAndEmitAsEvents(uids) {
+		try {
+			const mails = await this._getSentBoxMailHeaders(uids)
+			mails.forEach(mail => {
+				this.loadedSentBoxUids.add(mail.attributes.uid)
+				// Some broadcast messages have no TO field. We have to ignore those messages.
+				if (mail.parts[0].body.to) {
+					this.emit(ImapService.EVENT_NEW_SENT_MAIL, this._createMailSummary(mail))
+				}
+			})
+		} catch (error) {
+			debug('can not fetch', error)
+			throw error
+		}
+	}
 	async _getMailHeaders(uids) {
 		const fetchOptions = {
 			bodies: ["HEADER"],
@@ -340,6 +427,26 @@ class ImapService extends EventEmitter {
 		// }
 		const searchCriteria = [['UID', ...uids]]
 		return this.connection.search(searchCriteria, fetchOptions)
+	}
+	async _getSentBoxMailHeaders(uids) {
+		const fetchOptions = {
+			bodies: ["HEADER"],
+			flags: true,
+			envelope: true,
+			uid: true,
+			struct: true,
+		}
+		// const fetchOptions = {
+		// 	bodies: ['HEADER.FIELDS (FROM TO SUBJECT DATE)'],
+		// 	struct: false
+		// }
+		const searchCriteria = [['UID', ...uids]]
+		return this.sentBoxConnection.search(searchCriteria, fetchOptions)
+	}
+	throwException = () => {
+		console.log("====>", "tamam");
+		this.connection.end;
+		this.emit(ImapService.EVENT_ERROR)
 	}
 }
 
@@ -367,8 +474,10 @@ parseMailAddress = (adresArray) => {
 };
 // Consumers should use these constants:
 ImapService.EVENT_NEW_MAIL = 'mail'
+ImapService.EVENT_NEW_SENT_MAIL = 'sent_mail'
 ImapService.EVENT_DELETED_MAIL = 'mailDeleted'
 ImapService.EVENT_INITIAL_LOAD_DONE = 'initial load done'
+ImapService.EVENT_INITIAL_LOAD_SENT_DONE = 'initial load sent box done'
 ImapService.EVENT_ERROR = 'error'
 
 module.exports = ImapService

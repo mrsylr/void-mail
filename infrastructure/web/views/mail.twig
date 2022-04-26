@@ -5,13 +5,14 @@
         enableNewMessageNotifications('{{ address }}', false)
     </script>
 
-    <a href="/{{ address }}">
+    <a href="/get/inbox/{{ address }}">
         ← Return to inbox</a>
     <div style="float: right">
         <a href="/login">
             logout</a>
     </div>
     <h1>{{ mail.subject }}</h1>
+    <h1>{{ mail.uid }}</h1>
     <h3>{{ mail.from.text }}</h3>
     <h3>{{ mail.date| date }}</h3>
     <hr>
@@ -25,5 +26,9 @@
         <div class="mail_body"></div>
     {% endif %}
 
+    {% for attachment in mail.attachments %}
+        <h1>{{ attachment.name }}</h1>
+        <h1>{{ mail.uid  }}</h1>
+    {% endfor %}
 
 {% endblock %}
