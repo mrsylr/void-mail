@@ -19,25 +19,10 @@ const connections = require('./domain/connections')
 const clientNotification = new ClientNotification()
 clientNotification.use(io)
 
-const yandexImapConfig = {
-	imap: {
-		user: "cfnteknoloji@yandex.com",
-		password: "CfnYandex44!",
-		host: "imap.yandex.com",
-		port: 993,
-		tls: true,
-		tlsOptions: {
-			rejectUnauthorized: false,
-			secureProtocol: "TLSv1_method"
-		},
-		authTimeout: 3000,
-	},
-};
-
 
 
 ConnectionArray[config.imap.user] = connections.create(config)
-ConnectionArray[config2.imap.user] = connections.create(config2)
+// ConnectionArray[config2.imap.user] = connections.create(config2)
 
 // const imapService = new ImapService(config)
 // const mailProcessingService = new MailProcessingService(
